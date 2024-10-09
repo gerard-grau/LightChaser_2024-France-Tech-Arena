@@ -7,10 +7,10 @@ using only paths of invariant channels*
 
 
 ## Shortest path pel trencament
-Es trenca el vertex e: N -> M
+Es trenca el vertex _e_: _N_ → _M_
 
-per tots els serveis que passen per e (ordenats pel valor):
-- busca el camí més curt de N a M
+per tots els serveis que passen per _e_ (ordenats pel valor):
+- busca el camí més curt de _N_ a _M_
 - simplifica el camí si torna enrere pels mateixos vertexs per on ja passava el servei
 
 ## Arbres
