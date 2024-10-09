@@ -1,5 +1,11 @@
 # Algorithms
 
+## Baseline (Shortest Path)
+*It sorts the planning path requests of the same batch by weight from largest to smallest,
+and then finds the global shortest path for each service in succession,
+using only paths of invariant channels*
+
+
 ## Shortest path pel trencament
 Es trenca el vertex e: N -> M
 
