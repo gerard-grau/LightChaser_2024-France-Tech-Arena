@@ -11,7 +11,7 @@ Es trenca el vertex _e_: _N_ → _M_
 
 per tots els serveis que passen per _e_ (ordenats pel valor):
 - busca el camí més curt de _N_ a _M_
-- simplifica el camí si torna enrere pels mateixos vertexs per on ja passava el servei
+- simplifica el camí si torna enrere pels mateixos vertexs per on ja passava el servei (si fa U-turns)
 
 ## Arbres
 Cerca exhaustiva / arbres / branch & bound
