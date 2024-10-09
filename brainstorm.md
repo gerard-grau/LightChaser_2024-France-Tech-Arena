@@ -6,6 +6,10 @@
 Mirar totes les possibilitats, i per cada una executar els 2 algoritmes (baseline i el nostre)
 + Començar per una solució greedy
 
++ fer BFS per veure quins vertex estan més utilitzats pel baseline
+
++ calcular shortest paths i veure quins son més utilitzats pel baseline (tallar aquell putejar el baseline)
+
 ## Metaheurístiques
 ???
 
