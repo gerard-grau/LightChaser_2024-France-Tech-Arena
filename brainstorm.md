@@ -30,6 +30,8 @@ per tots els serveis que passen per _e_ (ordenats pel valor):
 - busca el camí més curt de _N_ a _M_
 - simplifica el camí si torna enrere pels mateixos vertexs per on ja passava el servei (si fa U-turns)
 
+* Fer el shortest path fent un Dijkstra, amb costos a les arestes en funció de la capacitat restant
+
 ### Arbres
 Cerca exhaustiva / arbres / branch & bound
 
