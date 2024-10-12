@@ -1,17 +1,22 @@
 #include <vector>
 #include <iostream>
+#include <utility>
+#include <tuple>
 
 using namespace std;
 
+using Node = int;
 
 struct Edge {
-    int u;
-    int v;
+    int idx;
+    Node u;
+    Node v;
 };
 
 struct Service {
-    int s;
-    int d;
+    int id;
+    Node s;
+    Node d;
     int S;
     int L;
     int R;
@@ -30,6 +35,7 @@ struct Input {
 
 Input input;
 
+
 namespace ReadInput {
     void read_input() {
         cin >> input.N >> input.M;
@@ -39,18 +45,24 @@ namespace ReadInput {
         for (int& Pi : input.P) {
             cin >> Pi;
         }
-        for (Edge& edge : input.edges) {
-            int ui, vi;
+
+        for (int i = 0; i < input.edges.size(); ++i) {
+            input.edges[i].idx = i;
+        
+            Node ui, vi;
             cin >> ui >> vi;
-            edge.u = ui - 1;
-            edge.v = vi - 1;
+            input.edges[i].u = ui - 1;
+            input.edges[i].v = vi - 1;
         }
+
 
         cin >> input.J;
         input.services.resize(input.J);
 
         for (int i = 0; i < input.J; i++) {
             Service& service = input.services[i];
+            service.id = i;
+
             int s, d, L, R;
             cin >> s >> d >> service.S >> L >> R >> service.V;
             service.s = s - 1;
@@ -68,25 +80,30 @@ namespace ReadInput {
     }
 }
 
+
 namespace Bottleneck {
 
-    vector<vector<int>> failures;
+    using Scenario = vector<int>;
+    vector<Scenario> total_scenarios;
+
 
     void print_bottleneck_results() {
-        cout << failures.size() << endl;
-        for (vector<int> failure : failures) {
-            cout << failure.size() << endl;
+        
+        cout << total_scenarios.size() << endl;
 
-            for (size_t i = 0; i < failure.size(); ++i) {
-                cout << failure[i];
-                if (i < failure.size() - 1) {
+        for (auto& scenario : total_scenarios) {
+            cout << scenario.size() << endl;
+
+            for (size_t i = 0; i < scenario.size(); ++i) {
+                cout << scenario[i];
+                if (i < scenario.size() - 1) {
                     cout << " ";
                 }
             }
         }
-        fflush(stdout); // TODO: REVISAR !!!
 
     }
+
 
     void bottleneck() {
         
@@ -96,10 +113,50 @@ namespace Bottleneck {
 
 
 namespace Replanning {
+    
+    int T;
+    using EdgeWithChannel = tuple<Edge, int, int>;
+    vector<pair<Service, vector<EdgeWithChannel>>> replanned_services;
 
-    void replanning() {
-        
+    void replan_services(const Edge& e_failed) {
+
     }
+
+    void print_replanned_services() {
+        cout << replanned_services.size() << endl;
+        for (auto& [service, serv_edges] : replanned_services) {
+            cout << service.id << ' ' << serv_edges.size() << endl;
+
+            for (auto& [edge, e_l, e_r] : serv_edges) {
+                cout << edge.idx << e_l << e_r;
+            }
+            cout << endl;
+        }
+        fflush(stdout);
+    }
+
+    /**
+     * @brief Handles the replanning process.
+     * 
+     * Reads the number of test cases (T) and for each test case, reads the number of failed services (e_failed),
+     * calls the replanned_services function, and prints the result.
+     */
+    void replanning() {
+        cin >> T;
+
+        for (int i = 0; i < T; i++) {
+            int e_failed_idx;
+            cin >> e_failed_idx;
+            if (e_failed_idx == -1) return;
+
+            const Edge& e_failed = input.edges[e_failed_idx-1];
+            
+            replan_services(e_failed);
+            print_replanned_services();
+        }
+    }
+
+    
 }
 
 
