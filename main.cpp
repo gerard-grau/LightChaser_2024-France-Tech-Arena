@@ -1,19 +1,25 @@
-#include <vector>
-#include <iostream>
-#include <utility>
-#include <unordered_set>
-#include <tuple>
-#include <queue>
 #include <algorithm>
+#include <iostream>
 #include <limits>
+#include <queue>
+#include <tuple>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 using namespace std;
 
-const float INF = numeric_limits<float>::infinity(); // Corrected line
+const float INF = numeric_limits<float>::infinity();
 
 using Node = int;
-using HyperNode = pair<Node, int>;
+struct HyperNode {
+    Node node;
+    int wavelength;
 
+    bool operator==(const HyperNode& other) const {
+        return node == other.node && wavelength == other.wavelength;
+    }
+};
 
 struct Edge {
     int idx;
@@ -31,7 +37,11 @@ struct Service {
     int Left; // channel start 
     int Right; // channel end
     int Value;
-    vector<Edge> edges; 
+    vector<Edge> edges;
+
+    int bandwidth() {
+        return Right - Left;
+    }
 };
 
 struct Input {
@@ -149,16 +159,37 @@ namespace Replanning
 
         public:
 
-            Graph (const vector<Edge>& edges) : adj(input.N) {
-                
+            Graph (const vector<Edge>& edges) : adj(input.N) {                
                 for (const auto& edge : edges) {
                     adj[edge.u].push_back(pair(edge.v, 1));
                 }
             }
 
+            float get_change_cost(Node start, Node end, Node u) {
+                if (u == start || u == end) return 0;
+                int pi = input.P[u];
+                return 100/pi; // TODO: review
+            }
+
+            vector<HyperNode> get_path_from_parents(vector<vector<HyperNode>> parent, Node start, Node end){
+
+                vector<HyperNode> path;
+                Node v = end;
+                int wavelength = parent[end][0].wavelength; // If the parent has a different wavelength, start from him. Otherwise it doesn't matter
+
+                while (v != start) {
+                    path.push_back({v, wavelength});
+                    auto [v, wavelength] = parent[end][0];
+                }
+                path.push_back({start, wavelength});
+                reverse(path.begin(), path.end());
+
+                return path; // TODO: update edges' channels & Graph's and update Pi's
+            }
+
             vector<HyperNode> dijkstra(Node start, Node end, Service& serv) {
-                int r = serv.Right - serv.Left;
-                int k = 40 - r;
+                int k = 40 - serv.bandwidth();
+
                 vector<vector<bool>> visited (input.N, vector<bool>(k, false));
                 vector<vector<float>> dist (input.N, vector<float>(k, INF));
                 vector<vector<HyperNode>> parent (input.N, vector<HyperNode>(k, {-1, -1}));
@@ -191,11 +222,11 @@ namespace Replanning
                             pqueue.push({{v, wavelength}, new_cost});
                         }
                     }
-                    
-                    float change_cost = 10.0f; // TODO: add variable cost (0 for start or end, 1 / pi for others)
+
                     for (int i = 0; i < k; i++) {
                         if (i == wavelength) continue;
 
+                        float change_cost = get_change_cost(start, end, u);
                         float new_cost = cost + change_cost;
                         if (new_cost < dist[u][i]) {
                             dist[u][i] = new_cost;
@@ -210,15 +241,7 @@ namespace Replanning
                     cout << "No path found" << endl; // TODO !!!
                 }
 
-                vector<HyperNode> path;
-                auto [v, wavelength] = HyperNode{end, 0};
-                while (v != -1) {
-                    path.push_back(HyperNode{v, wavelength});
-                    auto [v, wavelength] = HyperNode(parent[end][0]);
-                }
-                reverse(path.begin(), path.end());
-
-                return path; // TODO: update edges' channels & Graph's and update Pi's
+                return get_path_from_parents(parent, start, end); // TODO: update edges' channels & Graph's and update Pi's
             }
     };
 
