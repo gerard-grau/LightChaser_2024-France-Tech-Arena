@@ -12,6 +12,7 @@ using namespace std;
 const float INF = numeric_limits<float>::infinity();
 
 using Node = int;
+
 struct HyperNode {
     Node node;
     int wavelength;
@@ -21,12 +22,21 @@ struct HyperNode {
     }
 };
 
+struct Service;
+
 struct Edge {
     int idx;
     Node u;
     Node v;
     vector<int> channels = vector<int>(40, -1);
     unordered_set<int> services_set;
+
+    const bool has_capacity(int wavelength, int bandwidth) {
+        for (int i = wavelength; i < wavelength + bandwidth; i++) {
+            if (channels[i] != -1) return false;
+        }
+        return true;
+    }
 };
 
 struct Service {
@@ -39,8 +49,11 @@ struct Service {
     int Value;
     vector<Edge> edges;
 
-    int bandwidth() {
-        return Right - Left;
+    /**
+     * @return Right - Left + 1
+     */
+    const int bandwidth() const {
+        return Right - Left + 1;
     }
 };
 
@@ -155,7 +168,7 @@ namespace Replanning
     class Graph {
         
         private:
-            vector<vector<pair<Node, double>>> adj;
+            vector<vector<pair<Node, double>>> adj; // TODO: Store the edge to track its capacity, not only to the nodes it connects.
 
         public:
 
@@ -165,17 +178,41 @@ namespace Replanning
                 }
             }
 
-            float get_change_cost(Node start, Node end, Node u) {
+            /**
+             * @brief Calculates the cost of changing a service at a given node.
+             *
+             * This function computes the cost associated with changing a service at a node `u` 
+             * between the start and end nodes. If the node `u` is either the start or end node, 
+             * the cost is zero. Otherwise, the cost is calculated based on the inverse of the 
+             * product of the input parameter at node `u` and the service value.
+             *
+             * @param start The starting node.
+             * @param end The ending node.
+             * @param u The node at which the service change cost is being calculated.
+             * @param Service The service for which the change cost is being calculated.
+             * @return The cost of changing the service at node `u`.
+             */
+            float change_cost(Node start, Node end, Node u, Service Service) {
                 if (u == start || u == end) return 0;
-                int pi = input.P[u];
-                return 100/pi; // TODO: review
+                return 100.0f / (input.P[u] * Service.Value); // TODO: review and modify heuristic
             }
 
-            vector<HyperNode> get_path_from_parents(vector<vector<HyperNode>> parent, Node start, Node end){
+            /**
+             * @brief Constructs a path from the parent nodes.
+             *
+             * This function generates a path from the given parent nodes starting from the end node and tracing back to the start node.
+             * It constructs the path by following the parent nodes and considering the wavelength of the edges.
+             *
+             * @param parent A 2D vector of HyperNode objects representing the parent nodes.
+             * @param start The starting node of the path.
+             * @param end The ending node of the path.
+             * @return A vector of HyperNode objects representing the path from the start node to the end node.
+             */
+            vector<HyperNode> get_path_from_parents(vector<vector<HyperNode>> parent, Node start, Node end) {
 
                 vector<HyperNode> path;
                 Node v = end;
-                int wavelength = parent[end][0].wavelength; // If the parent has a different wavelength, start from him. Otherwise it doesn't matter
+                int wavelength = parent[end][0].wavelength; // Use parent's wavelength if different, if equal this doesn't matter
 
                 while (v != start) {
                     path.push_back({v, wavelength});
@@ -188,7 +225,7 @@ namespace Replanning
             }
 
             vector<HyperNode> dijkstra(Node start, Node end, Service& serv) {
-                int k = 40 - serv.bandwidth();
+                int k = 40 - serv.bandwidth() + 1;
 
                 vector<vector<bool>> visited (input.N, vector<bool>(k, false));
                 vector<vector<float>> dist (input.N, vector<float>(k, INF));
@@ -226,8 +263,7 @@ namespace Replanning
                     for (int i = 0; i < k; i++) {
                         if (i == wavelength) continue;
 
-                        float change_cost = get_change_cost(start, end, u);
-                        float new_cost = cost + change_cost;
+                        float new_cost = cost + change_cost(start, end, u, serv);
                         if (new_cost < dist[u][i]) {
                             dist[u][i] = new_cost;
                             parent[u][i] = {u, wavelength};
@@ -245,9 +281,9 @@ namespace Replanning
             }
     };
 
+
     int T;
-    using EdgeWithChannel = tuple<Edge, int, int>;
-    vector<pair<Service, vector<EdgeWithChannel>>> replanned_services;
+    vector<pair<Service, vector<Edge>>> replanned_services;
 
     void replan_services(const Edge &e_failed) {
 
