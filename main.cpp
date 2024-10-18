@@ -40,6 +40,12 @@ struct Edge {
     // }
 };
 
+struct WavelengthChange : public Edge {
+    int idx = -1;
+    int wavelength_in;
+    int wavelength_out;
+};
+
 struct Service {
     int id;
     Node source;
@@ -216,78 +222,103 @@ namespace Replanning
             }
 
             /**
-             * @brief Calculates the cost of changing a service at a given node.
+             * @brief Calculates the cost of changing the channel for a given node and service.
              *
-             * This function computes the cost associated with changing a service at a node `u` 
-             * between the start and end nodes. If the node `u` is either the start or end node, 
-             * the cost is zero. Otherwise, the cost is calculated based on the inverse of the 
-             * product of the input parameter at node `u` and the service value.
+             * This function computes the cost associated with changing the channel for a node `u` 
+             * in the context of a specific service `serv`. If the node `u` is either the source 
+             * or the destination of the service, the cost is zero. Otherwise, the cost is 
+             * determined by a heuristic formula that takes into account the node's probability 
+             * and the service's value.
              *
-             * @param start The starting node.
-             * @param end The ending node.
-             * @param u The node at which the service change cost is being calculated.
-             * @param Service The service for which the change cost is being calculated.
-             * @return The cost of changing the service at node `u`.
+             * @param u The node for which the channel change cost is being calculated.
+             * @param serv The service context which includes the source, destination, and value.
+             * @return The cost of changing the channel for the node `u`.
              */
-            float get_change_cost(Node start, Node end, Node u, Service Service) {
-                if (u == start || u == end) return 0;
-                return CHANGE_COST / (input.P[u] * Service.Value); // TODO: review and modify heuristic
+            float get_change_cost(Node u, const Service& serv) {
+                if (u == serv.source || u == serv.dest) return 0;
+                return CHANGE_COST / (input.P[u] * serv.Value); // TODO: review and modify heuristic
                 // TODO: make it so that for the last failed_edges have more probability of using the channel change (lower the cost)
                 // we know that there are 60 fails at most, so: cost = K * log((61-i))
             }
 
+
             /**
-             * @brief Constructs a path from the parent nodes.
+             * @brief Constructs a path from the parent nodes for a given service.
              *
-             * This function generates a path from the given parent nodes starting from the end node and tracing back to the start node.
-             * It constructs the path by following the parent nodes and considering the wavelength of the edges.
+             * This function traces back from the destination node to the source node using the parent nodes
+             * and constructs the path taken. It also considers the wavelength used for the service.
              *
-             * @param parent A 2D vector of HyperNode objects representing the parent nodes.
-             * @param start The starting node of the path.
-             * @param end The ending node of the path.
-             * @return A vector of HyperNode objects representing the path from the start node to the end node.
+             * @param parent A 2D vector containing the parent nodes for each node.
+             * @param serv A reference to the Service object containing source and destination nodes.
+             * @return A vector of HyperNode representing the path from source to destination.
              */
-            vector<HyperNode> get_path_from_parents(vector<vector<HyperNode>> parent, Node start, Node end) {
-
+            vector<HyperNode> get_path_from_parents(vector<vector<HyperNode>> parent, Service& serv) { // TODO: REMOVE THIS
                 vector<HyperNode> path;
-                Node v = end;
-                int wavelength = parent[end][0].wavelength; // Use parent's wavelength if different, if equal this doesn't matter
+                Node v = serv.dest;
+                int wavelength = parent[serv.dest][0].wavelength; // Use parent's wavelength if different, if equal this doesn't matter
 
-                while (v != start) {
+                while (v != serv.source) {
                     path.push_back({v, wavelength});
-                    auto [v, wavelength] = parent[end][0];
+                    auto [v, wavelength] = parent[serv.dest][0]; // TODO: THIS IS WRONG!
                 }
-                path.push_back({start, wavelength});
+                path.push_back({serv.dest, wavelength});
+                reverse(path.begin(), path.end());
+                
+
+                return path; // TODO: update edges' channels & Graph's and update Pi's
+            }
+
+            vector<tuple<Edge, int, int>> get_path_from_parents(vector<vector<Edge>> incoming_edge, Service& serv) { // TODO: convert this to edges instead of Nodes
+                vector<Edge> wavelength_path;
+                Node v = serv.dest;
+                Node parent = incoming_edge[serv.dest][0].u;
+                int wavelength = parent.wavelength; // Use parent's wavelength if different, if equal this doesn't matter
+                Edge edge = incoming_edge[v][wavelength];
+
+                // u → v
+                while (v != serv.source) {
+                    if (...) {// normal edge
+                        path.push_back(edge, wavelength, wavelength+k);
+                    }
+                    else {
+                        wavelength = edge....
+                    }
+                    auto [v, wavelength] = incoming_edge[v][0];
+                    edge = incoming_edge[edge.u][wavelength];
+                }
+                path.push_back({serv.dest, wavelength});
                 reverse(path.begin(), path.end());
 
                 return path; // TODO: update edges' channels & Graph's and update Pi's
             }
 
+
             /**
              */
-            vector<HyperNode> dijkstra(Node start, Node end, Service& serv) { // TODO: get the start and end from the service
+            vector<Edge> dijkstra(Service& serv) {
                 int k = serv.dim();
+                // using HyperEdge = pair<Edge, int>;
                 vector<vector<bool>> visited (input.N, vector<bool>(k, false));
                 vector<vector<float>> distances (input.N, vector<float>(k, INF));
-                vector<vector<HyperNode>> parent (input.N, vector<HyperNode>(k, {-1, -1}));
+                vector<vector<Edge>> incoming_edge (input.N, vector<Edge>(k));
                 
                 auto cmp = [](const pair<HyperNode, float>& a, const pair<HyperNode, float>& b) {
                     return a.second > b.second;
                 };
                 priority_queue<pair<HyperNode, float>, vector<pair<HyperNode, float>>, decltype(cmp)> pqueue(cmp);
 
-                distances[start][0] = 0;
-                pqueue.push({{start, 0}, 0.0f});
+                distances[serv.source][0] = 0;
+                pqueue.push({{serv.source, 0}, 0.0f});
 
                 while (!pqueue.empty()) {
                     auto [hnode, dist] = pqueue.top();
                     auto [u, wavelength] = hnode;
                     pqueue.pop();
-                    
+
                     if (visited[u][wavelength]) continue;
                     visited[u][wavelength] = true;
                     
-                    if (hnode == HyperNode{end, 0}) break;
+                    if (hnode == HyperNode{serv.dest, 0}) break;
                     
                     for (const auto& edge : adj[u]) {
                         if (!is_wavelength_available(edge, wavelength, k, serv)) continue;
@@ -295,7 +326,8 @@ namespace Replanning
                         float new_dist = dist + 1; // WARNING +1 if we don't use heuritics, if not TODO: 
                         if (new_dist < distances[edge.v][wavelength]) {
                             distances[edge.v][wavelength] = new_dist;
-                            parent[edge.v][wavelength] = {u, wavelength};
+                            // parent[edge.v][wavelength] = {u, wavelength};
+                            incoming_edge[edge.v][wavelength] = edge;
                             pqueue.push({{edge.v, wavelength}, new_dist});
                         }
                     }
@@ -303,21 +335,23 @@ namespace Replanning
                     for (int i = 0; i < k; i++) {
                         if (i == wavelength) continue;
 
-                        float new_dist = dist + get_change_cost(start, end, u, serv);
+                        float new_dist = dist + get_change_cost(u, serv);
                         if (new_dist < distances[u][i]) {
                             distances[u][i] = new_dist;
-                            parent[u][i] = {u, wavelength};
+                            // parent[u][i] = {u, wavelength};
+                            incoming_edge[u][i] = Edge({-1, u, u}); // TODO:
                             pqueue.push({{u, i}, new_dist});
                         }
                     }
                     
                 }
 
-                if (distances[end][0] == INF) { // there is no path from start to end
+                if (distances[serv.dest][0] == INF) { // there is no path from start to end
                     cout << "No path found" << endl; // TODO !!!
+                    return {}; // return empty vector
                 }
 
-                return get_path_from_parents(parent, start, end); // TODO: update edges' channels & Graph's and update Pi's
+                return get_path_from_parents(incoming_edge, serv); // TODO: update edges' channels & Graph's and update Pi's
             }
 
             /**
