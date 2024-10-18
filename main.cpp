@@ -28,15 +28,16 @@ struct Edge {
     int idx;
     Node u;
     Node v;
+    bool has_failed = false;
     vector<int> channels = vector<int>(40, -1);
-    unordered_set<int> services_set;
+    unordered_set<int> services_set = {};
 
-    const bool has_capacity(int wavelength, int bandwidth) {
-        for (int i = wavelength; i < wavelength + bandwidth; i++) {
-            if (channels[i] != -1) return false;
-        }
-        return true;
-    }
+    // const bool has_capacity(int wavelength, int bandwidth) {
+    //     for (int i = wavelength; i < wavelength + bandwidth; i++) {
+    //         if (channels[i] != -1) return false;
+    //     }
+    //     return true;
+    // }
 };
 
 struct Service {
@@ -47,13 +48,22 @@ struct Service {
     int Left; // channel start 
     int Right; // channel end
     int Value;
-    vector<Edge> edges;
+    vector<Edge> path; // edge list
+    
 
     /**
      * @return Right - Left + 1
      */
     const int bandwidth() const {
         return Right - Left + 1;
+    }
+
+    /**
+     * @brief Dimension of the corresponding Hypergraph
+     * @return 40 - bandwidth + 1
+     */
+    const int dim() const {
+        return 40 - bandwidth() + 1;
     }
 };
 
@@ -102,8 +112,8 @@ namespace ReadInput {
             service.Left = L - 1;
             service.Right = R - 1;
 
-            service.edges.resize(service.Seq_length);
-            for (Edge &edge : service.edges) {
+            service.path.resize(service.Seq_length);
+            for (Edge &edge : service.path) {
                 int ej;
                 cin >> ej;
                 edge = input.edges[ej - 1];
@@ -111,6 +121,7 @@ namespace ReadInput {
         }
     }
 }
+
 
 namespace Bottleneck {
 
@@ -162,20 +173,46 @@ namespace Bottleneck {
     }
 }
 
+
 namespace Replanning
 {
     
     class Graph {
         
         private:
-            vector<vector<pair<Node, double>>> adj; // TODO: Store the edge to track its capacity, not only to the nodes it connects.
+            // vector<vector<pair<Node, double>>> adj; // TODO: Store the edge to track its capacity, not only to the nodes it connects.
+            vector<vector<Edge>> adj;
+            static constexpr float CHANGE_COST = 100.0f;
 
         public:
+            Graph() = default;
 
             Graph (const vector<Edge>& edges) : adj(input.N) {                
                 for (const auto& edge : edges) {
-                    adj[edge.u].push_back(pair(edge.v, 1));
+                    adj[edge.u].push_back(edge);
                 }
+            }
+
+            /**
+             * @brief Checks if a range of wavelengths is available on a given edge for a service.
+             *
+             * This function iterates over a specified range of wavelengths on an edge and checks if they are available
+             * for a given service. A wavelength is considered available if it is either unoccupied (-1) or already occupied
+             * by the same service.
+             *
+             * @param edge The edge on which to check the availability of wavelengths.
+             * @param wavelength The starting wavelength to check.
+             * @param k The number of consecutive wavelengths to check.
+             * @param serv The service for which the wavelengths are being checked.
+             * @return true if all wavelengths in the specified range are available for the service, false otherwise.
+             */
+            bool is_wavelength_available(Edge edge, int wavelength, int k, Service serv) {
+                for (int i = wavelength; i < wavelength + k; i++) {
+                    if (edge.channels[i] != -1 and edge.channels[i] != serv.id) {
+                        return false;
+                    }
+                }
+                return true;
             }
 
             /**
@@ -192,9 +229,11 @@ namespace Replanning
              * @param Service The service for which the change cost is being calculated.
              * @return The cost of changing the service at node `u`.
              */
-            float change_cost(Node start, Node end, Node u, Service Service) {
+            float get_change_cost(Node start, Node end, Node u, Service Service) {
                 if (u == start || u == end) return 0;
-                return 100.0f / (input.P[u] * Service.Value); // TODO: review and modify heuristic
+                return CHANGE_COST / (input.P[u] * Service.Value); // TODO: review and modify heuristic
+                // TODO: make it so that for the last failed_edges have more probability of using the channel change (lower the cost)
+                // we know that there are 60 fails at most, so: cost = K * log((61-i))
             }
 
             /**
@@ -224,11 +263,12 @@ namespace Replanning
                 return path; // TODO: update edges' channels & Graph's and update Pi's
             }
 
-            vector<HyperNode> dijkstra(Node start, Node end, Service& serv) {
-                int k = 40 - serv.bandwidth() + 1;
-
+            /**
+             */
+            vector<HyperNode> dijkstra(Node start, Node end, Service& serv) { // TODO: get the start and end from the service
+                int k = serv.dim();
                 vector<vector<bool>> visited (input.N, vector<bool>(k, false));
-                vector<vector<float>> dist (input.N, vector<float>(k, INF));
+                vector<vector<float>> distances (input.N, vector<float>(k, INF));
                 vector<vector<HyperNode>> parent (input.N, vector<HyperNode>(k, {-1, -1}));
                 
                 auto cmp = [](const pair<HyperNode, float>& a, const pair<HyperNode, float>& b) {
@@ -236,11 +276,11 @@ namespace Replanning
                 };
                 priority_queue<pair<HyperNode, float>, vector<pair<HyperNode, float>>, decltype(cmp)> pqueue(cmp);
 
-                dist[start][0] = 0;
+                distances[start][0] = 0;
                 pqueue.push({{start, 0}, 0.0f});
 
                 while (!pqueue.empty()) {
-                    auto [hnode, cost] = pqueue.top();
+                    auto [hnode, dist] = pqueue.top();
                     auto [u, wavelength] = hnode;
                     pqueue.pop();
                     
@@ -249,45 +289,59 @@ namespace Replanning
                     
                     if (hnode == HyperNode{end, 0}) break;
                     
-                    for (const auto& [v, c] : adj[u]) {
-                        // TODO: check if the edge [u, v] has capacity for this wavelength
-                        // if (input.edges[u][v][wavelength:wavelength+r] != [-1..-1]) continue
-                        float new_cost = cost + c;
-                        if (new_cost < dist[v][wavelength]) {
-                            dist[v][wavelength] = new_cost;
-                            parent[v][wavelength] = {u, wavelength};
-                            pqueue.push({{v, wavelength}, new_cost});
+                    for (const auto& edge : adj[u]) {
+                        if (!is_wavelength_available(edge, wavelength, k, serv)) continue;
+
+                        float new_dist = dist + 1; // WARNING +1 if we don't use heuritics, if not TODO: 
+                        if (new_dist < distances[edge.v][wavelength]) {
+                            distances[edge.v][wavelength] = new_dist;
+                            parent[edge.v][wavelength] = {u, wavelength};
+                            pqueue.push({{edge.v, wavelength}, new_dist});
                         }
                     }
 
                     for (int i = 0; i < k; i++) {
                         if (i == wavelength) continue;
 
-                        float new_cost = cost + change_cost(start, end, u, serv);
-                        if (new_cost < dist[u][i]) {
-                            dist[u][i] = new_cost;
+                        float new_dist = dist + get_change_cost(start, end, u, serv);
+                        if (new_dist < distances[u][i]) {
+                            distances[u][i] = new_dist;
                             parent[u][i] = {u, wavelength};
-                            pqueue.push({{u, i}, new_cost});
+                            pqueue.push({{u, i}, new_dist});
                         }
                     }
                     
                 }
 
-                if (dist[end][0] == INF) { // there is no path from start to end
+                if (distances[end][0] == INF) { // there is no path from start to end
                     cout << "No path found" << endl; // TODO !!!
                 }
 
                 return get_path_from_parents(parent, start, end); // TODO: update edges' channels & Graph's and update Pi's
             }
+
+            /**
+             * repeat for all dead services:
+                * dijkstra
+                * shortest path -> marquem com usats
+             *
+             * alliberar camins
+             */
+
+            void update_graph(Edge& edge_failed) {
+                Node u = edge_failed.u;
+                auto& edges = adj[u];
+                edges.erase(std::remove_if(edges.begin(), edges.end(), [&](const std::pair<Node, int>& edge) {
+                    return edge.first == edge_failed.v;
+                }), edges.end());
+            }
+            
     };
 
 
     int T;
     vector<pair<Service, vector<Edge>>> replanned_services;
-
-    void replan_services(const Edge &e_failed) {
-
-    }
+    Graph graph;
 
     void print_replanned_services() {
         cout << replanned_services.size() << endl;
@@ -304,6 +358,57 @@ namespace Replanning
         fflush(stdout);
     }
 
+
+
+    /**
+     * @brief Retrieves a sorted list of services affected by a failed edge.
+     *
+     * This function identifies the services that are affected by a given failed edge,
+     * removes duplicates, and sorts them in @b descending order based on their value.
+     *
+     * @param failed_edge The edge that has failed, containing channel information.
+     * @return A vector of affected services, sorted in descending order of their value.
+     */
+    vector<Service> get_affected_services_sorted(const Edge& failed_edge) {
+        vector<Service> affected_services;
+        unordered_set<int> seen_services_id;
+
+        for (const int& id : failed_edge.channels) {
+            if (id == -1 || seen_services_id.count(id)) continue;
+            affected_services.push_back(input.services[id]);
+            seen_services_id.insert(id);
+        }
+        sort(affected_services.begin(), affected_services.end(), [](const Service& a, const Service& b) {
+            return a.Value > b.Value;
+        });
+        return affected_services;
+    }
+
+
+    void replan_failed_edge(const Edge& failed_edge) {
+        // iterate over the affected services in ascending order of serv.Value
+        vector<Service> affected_services = get_affected_services_sorted(failed_edge);
+        
+        for (auto& serv : affected_services) {
+            graph.dijkstra(...);
+        }
+    }
+
+
+    void replan_scenario() {
+        int e_failed_idx;
+        cin >> e_failed_idx;
+        if (e_failed_idx == -1) {
+            return;
+        }
+
+        const Edge& failed_edge = input.edges[e_failed_idx - 1];
+
+        replan_failed_edge(failed_edge);
+        print_replanned_services();
+    }
+
+
     /**
      * @brief Handles the replanning process.
      *
@@ -312,18 +417,11 @@ namespace Replanning
      */
     void replanning() {
         cin >> T;
+        graph = Graph(input.edges);
 
         for (int i = 0; i < T; i++)
         {
-            int e_failed_idx;
-            cin >> e_failed_idx;
-            if (e_failed_idx == -1)
-                return;
-
-            const Edge &e_failed = input.edges[e_failed_idx - 1];
-
-            replan_services(e_failed);
-            print_replanned_services();
+            replan_scenario();
         }
     }
 
