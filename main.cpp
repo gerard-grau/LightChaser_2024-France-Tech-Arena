@@ -31,20 +31,24 @@ struct Edge {
     bool has_failed = false;
     vector<int> channels = vector<int>(40, -1);
     unordered_set<int> services_set = {};
-
-    // const bool has_capacity(int wavelength, int bandwidth) {
-    //     for (int i = wavelength; i < wavelength + bandwidth; i++) {
-    //         if (channels[i] != -1) return false;
-    //     }
-    //     return true;
-    // }
 };
 
-struct WavelengthChange : public Edge {
-    int idx = -1;
-    int wavelength_in;
-    int wavelength_out;
+struct WavelengthChangeEdge { // TODO:  revise
+    int wl_in;
+    int wl_out;
 };
+
+struct EdgeWithWavelengths {
+    Edge edge;
+    int Left;
+    int Right;
+};
+
+// struct WavelengthChange : public Edge {
+//     int idx = -1;
+//     int wavelength_in;
+//     int wavelength_out;
+// };
 
 struct Service {
     int id;
@@ -186,7 +190,6 @@ namespace Replanning
     class Graph {
         
         private:
-            // vector<vector<pair<Node, double>>> adj; // TODO: Store the edge to track its capacity, not only to the nodes it connects.
             vector<vector<Edge>> adj;
             static constexpr float CHANGE_COST = 100.0f;
 
@@ -212,7 +215,8 @@ namespace Replanning
              * @param serv The service for which the wavelengths are being checked.
              * @return true if all wavelengths in the specified range are available for the service, false otherwise.
              */
-            bool is_wavelength_available(Edge edge, int wavelength, int k, Service serv) {
+            bool is_wavelength_available(Edge edge, int wavelength, Service serv) {
+                int k = serv.dim();
                 for (int i = wavelength; i < wavelength + k; i++) {
                     if (edge.channels[i] != -1 and edge.channels[i] != serv.id) {
                         return false;
@@ -268,23 +272,30 @@ namespace Replanning
                 return path; // TODO: update edges' channels & Graph's and update Pi's
             }
 
-            vector<tuple<Edge, int, int>> get_path_from_parents(vector<vector<Edge>> incoming_edge, Service& serv) { // TODO: convert this to edges instead of Nodes
-                vector<Edge> wavelength_path;
-                Node v = serv.dest;
+            vector<EdgeWithWavelengths> get_path_from_parents(vector<vector<Edge>> incoming_edge, Service& serv) { // TODO: convert this to edges instead of Nodes
+                vector<EdgeWithWavelengths> wavelength_path;
                 Node parent = incoming_edge[serv.dest][0].u;
+
                 int wavelength = parent.wavelength; // Use parent's wavelength if different, if equal this doesn't matter
                 Edge edge = incoming_edge[v][wavelength];
 
                 // u → v
-                while (v != serv.source) {
-                    if (...) {// normal edge
-                        path.push_back(edge, wavelength, wavelength+k);
+                Node v = serv.dest;
+                Node u;
+                int curr_wl;
+                while (u != serv.source) { // TODO: look for a nice way to store wavelength changes as Edges
+                    auto [parent_v, wavelength] = incoming_edge[v][0];
+                    edge = incoming_edge[edge.v][wavelength];
+                    u = v;
+                    v = parent_v;
+
+                    if (...) { // regular edge
+                        wavelength_path.push_back({edge, wavelength, wavelength + serv.bandwidth()-1});
                     }
-                    else {
-                        wavelength = edge....
+                    else { // wavelength change
+                        // TODO: update wavelength
+                        int new_wavelength =....
                     }
-                    auto [v, wavelength] = incoming_edge[v][0];
-                    edge = incoming_edge[edge.u][wavelength];
                 }
                 path.push_back({serv.dest, wavelength});
                 reverse(path.begin(), path.end());
@@ -295,9 +306,8 @@ namespace Replanning
 
             /**
              */
-            vector<Edge> dijkstra(Service& serv) {
+            vector<EdgeWithWavelengths> dijkstra(Service& serv) {
                 int k = serv.dim();
-                // using HyperEdge = pair<Edge, int>;
                 vector<vector<bool>> visited (input.N, vector<bool>(k, false));
                 vector<vector<float>> distances (input.N, vector<float>(k, INF));
                 vector<vector<Edge>> incoming_edge (input.N, vector<Edge>(k));
@@ -307,40 +317,41 @@ namespace Replanning
                 };
                 priority_queue<pair<HyperNode, float>, vector<pair<HyperNode, float>>, decltype(cmp)> pqueue(cmp);
 
-                distances[serv.source][0] = 0;
+                distances[serv.source][0] = 0.0f;
                 pqueue.push({{serv.source, 0}, 0.0f});
 
                 while (!pqueue.empty()) {
                     auto [hnode, dist] = pqueue.top();
-                    auto [u, wavelength] = hnode;
+                    auto [u, curr_wl] = hnode;
                     pqueue.pop();
 
-                    if (visited[u][wavelength]) continue;
-                    visited[u][wavelength] = true;
+                    if (visited[u][curr_wl]) continue;
+                    visited[u][curr_wl] = true;
                     
-                    if (hnode == HyperNode{serv.dest, 0}) break;
+                    if (hnode == HyperNode{serv.dest, 0}) break; // Ensure the algorithm reaches [dest, 0] to correctly construct the path later
+
                     
                     for (const auto& edge : adj[u]) {
-                        if (!is_wavelength_available(edge, wavelength, k, serv)) continue;
+                        if (!is_wavelength_available(edge, curr_wl, serv)) continue;
 
                         float new_dist = dist + 1; // WARNING +1 if we don't use heuritics, if not TODO: 
-                        if (new_dist < distances[edge.v][wavelength]) {
-                            distances[edge.v][wavelength] = new_dist;
+                        if (new_dist < distances[edge.v][curr_wl]) {
+                            distances[edge.v][curr_wl] = new_dist;
                             // parent[edge.v][wavelength] = {u, wavelength};
-                            incoming_edge[edge.v][wavelength] = edge;
-                            pqueue.push({{edge.v, wavelength}, new_dist});
+                            incoming_edge[edge.v][curr_wl] = edge;
+                            pqueue.push({{edge.v, curr_wl}, new_dist});
                         }
                     }
 
-                    for (int i = 0; i < k; i++) {
-                        if (i == wavelength) continue;
+                    for (int new_wl = 0; new_wl < k; new_wl++) { // Wavelength change
+                        if (new_wl == curr_wl) continue;
 
                         float new_dist = dist + get_change_cost(u, serv);
-                        if (new_dist < distances[u][i]) {
-                            distances[u][i] = new_dist;
-                            // parent[u][i] = {u, wavelength};
-                            incoming_edge[u][i] = Edge({-1, u, u}); // TODO:
-                            pqueue.push({{u, i}, new_dist});
+                        if (new_dist < distances[u][new_wl]) {
+                            distances[u][new_wl] = new_dist;
+                            // parent[u][new_wl] = {u, wavelength};
+                            incoming_edge[u][new_wl] = NewObj({u, curr_wl, new_wl}); // TODO: store wavelength in edge change
+                            pqueue.push({{u, new_wl}, new_dist});
                         }
                     }
                     
