@@ -232,8 +232,11 @@ namespace Replanning {
          * @return true if all wavelengths in the specified range are available for the service, false otherwise.
          */
         bool is_wavelength_available(const Edge& edge, int wavelength, const Service& serv) {
-            int k = serv.dim();
-            for (int i = wavelength; i < wavelength + k; i++) {
+            int W = serv.bandwidth();
+            cout << endl;
+            // cout << edge.idx << ' ';
+            for (int i = wavelength; i < wavelength + W; i++) {
+                // cout << i << '#';
                 if (input.edges[edge.idx].channels[i] != -1 and input.edges[edge.idx].channels[i] != serv.id) {
                     return false;
                 }
@@ -329,6 +332,10 @@ namespace Replanning {
          *         If no path is found, an empty vector is returned.
          */
         vector<EdgeWithWavelengths> find_shortest_path(const Service &serv) {
+            // TODO: OPTIMITZACIÓ: ara mateix la funció is_edge_valid s'està cridant molts cops per al mateix edge. Solucións possibles:
+            // 1. Guardar-ho en un vector de mida M (edges.size()) per no calcular-ho més d'un cop
+            // 2. Afegir tots els fills possibles (tot i que no siguin vàlids) i només comprovar si son vàlids un cop fem el pop
+            //    de la pqueue (a partir del seu parent_edge) => la pqueue se'ns fa molt més gran => pitjor rendiment?
             int k = serv.dim();
             vector<vector<bool>> visited (input.N, vector<bool>(k, false));
             vector<vector<float>> distances (input.N, vector<float>(k, INF));
@@ -349,7 +356,7 @@ namespace Replanning {
 
                 if (visited[curr_node][curr_wl]) continue;
                 visited[curr_node][curr_wl] = true;
-
+                cout << "current wavelength: " << curr_wl+1 << "-" << curr_wl+serv.bandwidth() << endl;
                 if (hnode == HyperNode{serv.dest, 0}) break; // Ensure the algorithm reaches [dest, 0] to correctly construct the path later
 
 
@@ -383,10 +390,10 @@ namespace Replanning {
             }
 
             if (distances[serv.dest][0] == INF) { // there is no path from start to end
-                // cout << "No path found" << endl;
+                cout << "No path found" << endl << endl;
                 return {}; // return empty vector
             }
-
+            cout << "path found" << endl << endl;
             return get_path_from_parents(parent_edge, serv); // TODO: update edges' channels & Graph's and update Pi's
         }
     };
@@ -585,7 +592,8 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
         while (cin >> e_failed_idx) {
             if (e_failed_idx == -1) return;
 
-            const Edge& failed_edge = input.edges[e_failed_idx - 1];
+            Edge& failed_edge = input.edges[e_failed_idx - 1];
+            failed_edge.has_failed = true;
             failed_edges.push_back(failed_edge);
 
             replan_failed_edge(failed_edge);
