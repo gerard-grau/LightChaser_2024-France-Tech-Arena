@@ -327,87 +327,126 @@ namespace Replanning {
         }
 
 
-        /**
-         * @brief Computes the shortest path using Dijkstra's algorithm with wavelength constraints.
-         *
-         * This function implements a variant of Dijkstra's algorithm to find the shortest path in a graph
-         * where each edge has multiple wavelengths. The algorithm considers both the distance and the cost
-         * of changing wavelengths.
-         *
-         * @param serv The service request containing the source, destination, and other parameters.
-         * @return A vector of EdgeWithWavelengths representing the shortest path from the source to the destination.
-         *         If no path is found, an empty vector is returned.
-         */
-        vector<EdgeWithWavelengths> find_shortest_path(const Service &serv) {
-            // TODO: OPTIMITZACIÓ: ara mateix la funció is_edge_valid s'està cridant molts cops per al mateix edge. Solucións possibles:
-            // 1. Guardar-ho en un vector de mida M (edges.size()) per no calcular-ho més d'un cop
-            // 2. Afegir tots els fills possibles (tot i que no siguin vàlids) i només comprovar si son vàlids un cop fem el pop
-            //    de la pqueue (a partir del seu parent_edge) => la pqueue se'ns fa molt més gran => pitjor rendiment?
-            
-            //  u → v → ... → v' → u'  ~  u → u'  <=>  P[u]=P[u'] > 0
-            //  u → v → v' → w' → u' → end
-            int k = serv.dim();
-            vector<vector<bool>> visited (input.N, vector<bool>(k, false));
-            vector<vector<float>> distances (input.N, vector<float>(k, INF));
-            vector<vector<EdgeVariant>> parent_edge (input.N, vector<EdgeVariant>(k));
+/**
+ * @brief Computes the shortest path using Dijkstra's algorithm with wavelength and edge constraints.
+ *
+ * This function implements a variant of Dijkstra's algorithm to find the shortest path in a graph
+ * where each edge has multiple wavelengths. The algorithm considers both the distance and the cost
+ * of changing wavelengths, while ensuring no edge is used more than once across all wavelengths.
+ *
+ * @param serv The service request containing the source, destination, and other parameters.
+ * @return A vector of EdgeWithWavelengths representing the shortest path from the source to the destination.
+ *         If no path is found, an empty vector is returned.
+ */
+vector<EdgeWithWavelengths> find_shortest_path(const Service &serv) {
+    int k = serv.dim();
+    
+    // Structure to represent complete state
+    struct HyperState {
+    Node node;
+    int wavelength;
+    unordered_set<EdgeId> used_edges;  // Changed from set to unordered_set
+    
+    // Custom equality operator needed for unordered containers
+    bool operator==(const HyperState& other) const {
+        return node == other.node && 
+               wavelength == other.wavelength && 
+               used_edges == other.used_edges;
+    }
+};
 
-            auto cmp = [](const pair<HyperNode, float>& a, const pair<HyperNode, float>& b) {
-                return a.second > b.second;
-            };
-            priority_queue<pair<HyperNode, float>, vector<pair<HyperNode, float>>, decltype(cmp)> pqueue(cmp);
-
-            distances[serv.source][0] = 0.0f;
-            pqueue.push({{serv.source, 0}, 0.0f});
-
-            while (!pqueue.empty()) {
-                auto [hnode, dist] = pqueue.top();
-                auto [curr_node, curr_wl] = hnode;
-                pqueue.pop();
-
-                if (visited[curr_node][curr_wl]) continue;
-                visited[curr_node][curr_wl] = true;
-                // cout << "current wavelength: " << curr_wl+1 << "-" << curr_wl+serv.bandwidth() << endl;
-                if (hnode == HyperNode{serv.dest, 0}) break; // Ensure the algorithm reaches [dest, 0] to correctly construct the path later
-
-
-                for (const auto& edge : adj[curr_node]) {
-                    if (!is_edge_valid(edge, curr_wl, serv)) continue;
-                    Node next_node = edge.get_other_end(curr_node);
-
-                    float next_dist = dist + 1; // WARNING +1 if we don't use heuritics, if not TODO:
-                    if (next_dist < distances[next_node][curr_wl]) {
-                        distances[next_node][curr_wl] = next_dist;
-                        parent_edge[next_node][curr_wl] = edge;
-                        pqueue.push({{next_node, curr_wl}, next_dist});
-                    }
-                }
-
-                if (input.P[curr_node] == 0) continue;
-
-                for (int next_wl = 0; next_wl < k; next_wl++) { // Wavelength change
-                    if (next_wl == curr_wl) continue;
-
-                    float next_dist = dist + get_wavelength_change_cost(curr_node, serv);
-                    // if (next_dist == INF) continue;
-
-                    if (next_dist < distances[curr_node][next_wl]) {
-                        distances[curr_node][next_wl] = next_dist;
-                        parent_edge[curr_node][next_wl] = WavelengthChangeEdge{curr_wl, next_wl};
-                        pqueue.push({{curr_node, next_wl}, next_dist});
-                    }
-                }
-
-            }
-
-            if (distances[serv.dest][0] == INF) { // there is no path from start to end
-                // cout << "No path found" << endl << endl;
-                return {}; // return empty vector
-            }
-            // cout << "path found" << endl << endl;
-            return get_path_from_parents(parent_edge, serv); // TODO: update edges' channels & Graph's and update Pi's
+// Custom hasher for HyperState needed since we're using it as key in maps
+struct StateHasher {
+    size_t operator()(const HyperState& state) const {
+        size_t h1 = hash<Node>{}(state.node);
+        size_t h2 = hash<int>{}(state.wavelength);
+        
+        // Combine the hashes of used_edges
+        size_t h3 = 0;
+        for (const EdgeId& edge_id : state.used_edges) {
+            h3 ^= hash<EdgeId>{}(edge_id) + 0x9e3779b9 + (h3 << 6) + (h3 >> 2);
         }
-    };
+        
+        // Combine all hashes
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
 
+// Now use unordered_map instead of map for better performance
+unordered_map<HyperState, float, StateHasher> distances;
+unordered_map<HyperState, EdgeVariant, StateHasher> parent_edge;
+unordered_set<HyperState, StateHasher> visited;
+
+vector<EdgeWithWavelengths> find_shortest_path(const Service &serv) {
+    int k = serv.dim();
+    
+    auto cmp = [](const pair<HyperState, float>& a, const pair<HyperState, float>& b) {
+        return a.second > b.second;
+    };
+    priority_queue<pair<HyperState, float>, vector<pair<HyperState, float>>, decltype(cmp)> pqueue(cmp);
+
+    // Initialize starting state
+    HyperState initial_state = {serv.source, 0, unordered_set<EdgeId>()};
+    distances[initial_state] = 0.0f;
+    pqueue.push({initial_state, 0.0f});
+
+    while (!pqueue.empty()) {
+        auto [curr_state, dist] = pqueue.top();
+        pqueue.pop();
+
+        if (visited.count(curr_state)) continue;
+        visited.insert(curr_state);
+
+        if (curr_state.node == serv.dest && curr_state.wavelength == 0) break;
+
+        // Process edges in current wavelength
+        for (const auto& edge : adj[curr_state.node]) {
+            EdgeId base_edge_id = get_base_edge_id(edge);
+            if (curr_state.used_edges.count(base_edge_id)) continue;
+
+            if (!is_edge_valid(edge, curr_state.wavelength, serv)) continue;
+            Node next_node = edge.get_other_end(curr_state.node);
+
+            // Create new state with updated used_edges
+            HyperState next_state = curr_state;
+            next_state.node = next_node;
+            next_state.used_edges.insert(base_edge_id);
+
+            float next_dist = dist + 1;
+            if (distances.count(next_state) == 0 || next_dist < distances[next_state]) {
+                distances[next_state] = next_dist;
+                parent_edge[next_state] = edge;
+                pqueue.push({next_state, next_dist});
+            }
+        }
+
+        // Process wavelength changes
+        if (input.P[curr_state.node] == 0) continue;
+
+        for (int next_wl = 0; next_wl < k; next_wl++) {
+            if (next_wl == curr_state.wavelength) continue;
+
+            HyperState next_state = curr_state;
+            next_state.wavelength = next_wl;
+
+            float next_dist = dist + get_wavelength_change_cost(curr_state.node, serv);
+
+            if (distances.count(next_state) == 0 || next_dist < distances[next_state]) {
+                distances[next_state] = next_dist;
+                parent_edge[next_state] = WavelengthChangeEdge{curr_state.wavelength, next_wl};
+                pqueue.push({next_state, next_dist});
+            }
+        }
+    }
+
+    HyperState final_state = {serv.dest, 0, unordered_set<EdgeId>()};
+    if (distances.find(final_state) == distances.end() || 
+        distances[final_state] == INF) {
+        return {};
+    }
+
+    return get_path_from_parents(parent_edge, serv);
+}
 
 
     int T;
