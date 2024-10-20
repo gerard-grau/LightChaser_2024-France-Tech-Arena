@@ -233,8 +233,7 @@ namespace Replanning {
          */
         bool is_wavelength_available(const Edge& edge, int wavelength, const Service& serv) {
             int W = serv.bandwidth();
-            cout << endl;
-            // cout << edge.idx << ' ';
+            // cout << '\n' << edge.idx << ' ';
             for (int i = wavelength; i < wavelength + W; i++) {
                 // cout << i << '#';
                 if (input.edges[edge.idx].channels[i] != -1 and input.edges[edge.idx].channels[i] != serv.id) {
@@ -356,7 +355,7 @@ namespace Replanning {
 
                 if (visited[curr_node][curr_wl]) continue;
                 visited[curr_node][curr_wl] = true;
-                cout << "current wavelength: " << curr_wl+1 << "-" << curr_wl+serv.bandwidth() << endl;
+                // cout << "current wavelength: " << curr_wl+1 << "-" << curr_wl+serv.bandwidth() << endl;
                 if (hnode == HyperNode{serv.dest, 0}) break; // Ensure the algorithm reaches [dest, 0] to correctly construct the path later
 
 
@@ -390,10 +389,10 @@ namespace Replanning {
             }
 
             if (distances[serv.dest][0] == INF) { // there is no path from start to end
-                cout << "No path found" << endl << endl;
+                // cout << "No path found" << endl << endl;
                 return {}; // return empty vector
             }
-            cout << "path found" << endl << endl;
+            // cout << "path found" << endl << endl;
             return get_path_from_parents(parent_edge, serv); // TODO: update edges' channels & Graph's and update Pi's
         }
     };
@@ -414,9 +413,10 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
         }
         cout << num_Replanned_services << '\n';
 
-        cout << "replanned successfully: " << num_Replanned_services << " / " << paths.size() << endl;
+        // cout << "replanned successfully: " << num_Replanned_services << " / " << paths.size() << endl;
 
         for (size_t i = 0; i < paths.size(); i++) {
+            if (paths[i].empty()) continue;
             vector<EdgeWithWavelengths>path = paths[i];
             Service serv = affected_services[i];
             cout << serv.id+1 << ' ' << path.size() << '\n';
@@ -543,16 +543,15 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
             if (serv_id == -1 || seen_services_id.count(serv_id)) continue;
             affected_services.push_back(input.services[serv_id]);
             seen_services_id.insert(serv_id);
-            // // print shortest path:
-            // cout << "Service ID: " << input.services[serv_id].id << " Path: ";
-            // for (const auto& edge_wl : input.services[serv_id].path) {
-            //     cout << "(" << edge_wl.edge.idx << ", " << edge_wl.Left << "-" << edge_wl.Right << ") ";
-            // }
-            // cout << endl;
         }
         sort(affected_services.begin(), affected_services.end(), [](const Service& a, const Service& b) {
             return a.Value > b.Value;
         });
+        // for (const auto& service : affected_services) {
+        //     cout << "Service ID: " << service.id + 1 << "\n";
+        //     cout << "Value: " << service.Value << "\n";
+        //     cout << "\n";
+        // }
         return affected_services;
     }
 
@@ -568,12 +567,13 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
      * @param failed_edge The edge that has failed and needs re-routing.
      */
     void replan_failed_edge(const Edge& failed_edge) {
-        const vector<Service> affected_services = get_affected_services_sorted(failed_edge);
+        const vector<Service>& affected_services = get_affected_services_sorted(failed_edge);
         vector<vector<EdgeWithWavelengths>> shortest_paths;
 
-        for (auto& serv : affected_services) {
+        for (const Service &serv : affected_services) {
             vector<EdgeWithWavelengths> path = graph.find_shortest_path(serv);
             update_Pis_and_channels(path, serv);
+            // cout << "replanning Serv.id " << serv.id+1 << " was succes: " << !path.empty() << endl;
             shortest_paths.push_back(path);
             // TODO: remove the empty paths and their corresponding affected_service
         }
