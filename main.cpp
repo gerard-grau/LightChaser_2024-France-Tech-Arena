@@ -326,38 +326,27 @@ namespace Replanning {
             return path;
         }
 
-
         /**
-         * @brief Computes the shortest path using Dijkstra's algorithm with wavelength constraints.
-         *
-         * This function implements a variant of Dijkstra's algorithm to find the shortest path in a graph
-         * where each edge has multiple wavelengths. The algorithm considers both the distance and the cost
-         * of changing wavelengths.
-         *
-         * @param serv The service request containing the source, destination, and other parameters.
-         * @return A vector of EdgeWithWavelengths representing the shortest path from the source to the destination.
-         *         If no path is found, an empty vector is returned.
+         * @brief Modified Dijkstra that prevents visiting the same node multiple times across all wavelengths
          */
         vector<EdgeWithWavelengths> find_shortest_path(const Service &serv) {
-            // TODO: OPTIMITZACIÓ: ara mateix la funció is_edge_valid s'està cridant molts cops per al mateix edge. Solucións possibles:
-            // 1. Guardar-ho en un vector de mida M (edges.size()) per no calcular-ho més d'un cop
-            // 2. Afegir tots els fills possibles (tot i que no siguin vàlids) i només comprovar si son vàlids un cop fem el pop
-            //    de la pqueue (a partir del seu parent_edge) => la pqueue se'ns fa molt més gran => pitjor rendiment?
-            
-            //  u → v → ... → v' → u'  ~  u → u'  <=>  P[u]=P[u'] > 0
-            //  u → v → v' → w' → u' → end
             int k = serv.dim();
-            vector<vector<bool>> visited (input.N, vector<bool>(k, false));
-            vector<vector<float>> distances (input.N, vector<float>(k, INF));
-            vector<vector<EdgeVariant>> parent_edge (input.N, vector<EdgeVariant>(k));
+            vector<vector<bool>> visited(input.N, vector<bool>(k, false));
+            vector<vector<float>> distances(input.N, vector<float>(k, INF));
+            vector<vector<EdgeVariant>> parent_edge(input.N, vector<EdgeVariant>(k));
+            
+            // Track which nodes have been used in the current best path to each node
+            vector<vector<unordered_set<Node>>> used_nodes_to_node(input.N, vector<unordered_set<Node>>(k));
 
             auto cmp = [](const pair<HyperNode, float>& a, const pair<HyperNode, float>& b) {
                 return a.second > b.second;
             };
             priority_queue<pair<HyperNode, float>, vector<pair<HyperNode, float>>, decltype(cmp)> pqueue(cmp);
 
+            // Initialize starting state
             distances[serv.source][0] = 0.0f;
             pqueue.push({{serv.source, 0}, 0.0f});
+            used_nodes_to_node[serv.source][0].insert(serv.source);  // Mark source as used
 
             while (!pqueue.empty()) {
                 auto [hnode, dist] = pqueue.top();
@@ -366,45 +355,57 @@ namespace Replanning {
 
                 if (visited[curr_node][curr_wl]) continue;
                 visited[curr_node][curr_wl] = true;
-                // cout << "current wavelength: " << curr_wl+1 << "-" << curr_wl+serv.bandwidth() << endl;
-                if (hnode == HyperNode{serv.dest, 0}) break; // Ensure the algorithm reaches [dest, 0] to correctly construct the path later
 
+                if (hnode == HyperNode{serv.dest, 0}) break;
 
+                // Process edges in current wavelength
                 for (const auto& edge : adj[curr_node]) {
-                    if (!is_edge_valid(edge, curr_wl, serv)) continue;
                     Node next_node = edge.get_other_end(curr_node);
 
-                    float next_dist = dist + 1; // WARNING +1 if we don't use heuritics, if not TODO:
+                    // Skip if this node has been used in any wavelength in the path to current node
+                    if (used_nodes_to_node[curr_node][curr_wl].count(next_node)) continue;
+
+                    if (!is_edge_valid(edge, curr_wl, serv)) continue;
+
+                    float next_dist = dist + 1;
+
+                    // Only update if we find a better path AND the node hasn't been used
                     if (next_dist < distances[next_node][curr_wl]) {
+                        // Create new set of used nodes for this path
+                        auto new_used_nodes = used_nodes_to_node[curr_node][curr_wl];
+                        new_used_nodes.insert(next_node);
+
+                        // Update the path
                         distances[next_node][curr_wl] = next_dist;
                         parent_edge[next_node][curr_wl] = edge;
+                        used_nodes_to_node[next_node][curr_wl] = new_used_nodes;
                         pqueue.push({{next_node, curr_wl}, next_dist});
                     }
                 }
 
+                // Process wavelength changes
                 if (input.P[curr_node] == 0) continue;
 
-                for (int next_wl = 0; next_wl < k; next_wl++) { // Wavelength change
+                for (int next_wl = 0; next_wl < k; next_wl++) {
                     if (next_wl == curr_wl) continue;
 
                     float next_dist = dist + get_wavelength_change_cost(curr_node, serv);
-                    // if (next_dist == INF) continue;
 
                     if (next_dist < distances[curr_node][next_wl]) {
+                        // When changing wavelength, we keep the same used nodes
                         distances[curr_node][next_wl] = next_dist;
                         parent_edge[curr_node][next_wl] = WavelengthChangeEdge{curr_wl, next_wl};
+                        used_nodes_to_node[curr_node][next_wl] = used_nodes_to_node[curr_node][curr_wl];
                         pqueue.push({{curr_node, next_wl}, next_dist});
                     }
                 }
-
             }
 
-            if (distances[serv.dest][0] == INF) { // there is no path from start to end
-                // cout << "No path found" << endl << endl;
-                return {}; // return empty vector
+            if (distances[serv.dest][0] == INF) {
+                return {};
             }
-            // cout << "path found" << endl << endl;
-            return get_path_from_parents(parent_edge, serv); // TODO: update edges' channels & Graph's and update Pi's
+
+            return get_path_from_parents(parent_edge, serv);
         }
     };
 
