@@ -482,18 +482,16 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
 
 
     /**
-     * @brief Updates the channels of edges based on new paths and old services.
+     * @brief Frees old used channels by comparing old service paths with new paths.
      *
-     * This function compares the old paths of services with the new paths and updates the channels
-     * of the edges accordingly. Specifically, it performs the following operations:
-     * - For edges that are present in both old and new paths, it updates the wavelength channels.
-     * - For edges that are present in the old paths but not in the new paths, it deletes the channels.
+     * This function iterates through the old service paths and compares them with the new paths.
+     * It performs the following operations:
+     * - If an edge in the old path is not present in the new path, it marks the channels of that edge as free (-1).
+     * - If an edge is present in both old and new paths, it updates the channels based on the new path's wavelength.
      *
      * @param new_paths A vector of vectors containing the new paths with edges and their wavelengths.
-     * @param old_services A vector of services containing the old paths.
+     * @param old_services A vector of services, each containing a path with edges and their wavelengths.
      */
-
-     //[[e1,e2,e3,e4], []] [s1, s2]
     void free_old_used_channels(const vector<vector<EdgeWithWavelengths>>& new_paths, const vector<Service>& old_services) {
         //old_path=serv.path and new_path
         //els que estan en el old i no en el new, eliminem
@@ -505,23 +503,23 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
         for (size_t i = 0; i < old_services.size(); i++) {
 
             for (const auto& [old_edge, old_Left, old_Right] : old_services[i].path) {
-                bool new_edge_found = false; // Flag to track if a new edge is found
+                bool is_edge_in_new_path = false; // Flag to track if a new edge is found
 
-                for (const EdgeWithWavelengths &new_edge : new_paths[i]) {
-                    if (old_edge.idx == new_edge.edge.idx) {
-                        new_edge_found = true; // Set the flag to true if a matching new edge is found
+                for (const auto &[new_edge, new_Left, new_Right] : new_paths[i]) {
+                    if (old_edge.idx == new_edge.idx) {
+                        is_edge_in_new_path = true; // Set the flag to true if a matching new edge is found
                         // Change wavelength if needed
-                        for (int j = old_Left; j < new_edge.Left; j++) {
+                        for (int j = old_Left; j <= min(new_Left + 1, old_Right); j++) {
                             input.edges[old_edge.idx].channels[j] = -1;
                         }
-                        for (int j = new_edge.Right + 1; j <= old_Right; j++) {
+                        for (int j = max(new_Right + 1, old_Left); j <= old_Right; j++) {
                             input.edges[old_edge.idx].channels[j] = -1;
                         }
                         break; // Exit the loop early since a matching new edge is found
                     }
                 }
 
-                if (!new_edge_found && !new_paths[i].empty()) {
+                if (!is_edge_in_new_path && !new_paths[i].empty()) {
                     // Delete channel (i.e., change to -1 our service)
                     for (int j = old_Left; j <= old_Right; j++) {
                         input.edges[old_edge.idx].channels[j] = -1;
@@ -605,6 +603,18 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
     void replan_scenario() {
         int e_failed_idx;
 
+        // cout << "\nFailed edges" << endl;
+        // for (const auto& edge : input.edges) {
+        //     cout << "Edge ID: " << edge.idx + 1 << "\n";
+        //     cout << "Nodes: " << edge.u + 1 << " - " << edge.v + 1 << "\n";
+        //     cout << "Used Channels: ";
+        //     cout << "has_failed? " << edge.has_failed << '\n';
+        //     for (size_t i = 0; i < edge.channels.size(); ++i) {
+        //         cout << edge.channels[i] << " ";
+        //     }
+        //     cout << "\n\n";
+        // }
+
         while (cin >> e_failed_idx) {
             if (e_failed_idx == -1) return;
 
@@ -613,15 +623,33 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
             failed_edges.push_back(failed_edge);
 
             replan_failed_edge(failed_edge);
+            
+            // cout << "\nFailed edges" << endl;
+            // for (const auto& edge : input.edges) {
+            //     cout << "Edge ID: " << edge.idx + 1 << "\n";
+            //     cout << "Nodes: " << edge.u + 1 << " - " << edge.v + 1 << "\n";
+            //     cout << "Used Channels: ";
+            //     cout << "has_failed? " << edge.has_failed << '\n';
+            //     for (size_t i = 0; i < edge.channels.size(); ++i) {
+            //         cout << edge.channels[i] << " ";
+            //     }
+            //     cout << "\n\n";
+            // }
+
+
         }
     }
 
-
+    /**
+     * @brief Resets the scenario to its initial state.
+     * 
+     * This function resets the input state to the provided initial state and clears
+     * the list of failed edges in preparation for the next scenario.
+     * 
+     * @param initial_input_state The initial state to reset the input to.
+     */
     void reset_scenario(const Input initial_input_state) {
         input = initial_input_state;
-        for (auto &edge : failed_edges) {
-            input.edges[edge.idx].has_failed = false;
-        }
         failed_edges = {}; // reset failed edges for the next scenario
     }
 
@@ -652,23 +680,30 @@ void print_replanned_services(const vector<vector<EdgeWithWavelengths>>& paths, 
         failed_edges = {};
         Input initial_input_state = input;
 
-        // print all services
-        // for (const auto& service : input.services) {
-        //     cout << "Service ID: " << service.id + 1 << "\n";
-        //     cout << "Source: " << service.source + 1 << "\n";
-        //     cout << "Destination: " << service.dest + 1 << "\n";
-        //     cout << "Sequence Length: " << service.Seq_length << "\n";
-        //     cout << "Left: " << service.Left + 1 << "\n";
-        //     cout << "Right: " << service.Right + 1 << "\n";
-        //     cout << "Value: " << service.Value << "\n";
-        //     cout << "Path: ";
-        //     for (const auto& edge_wl : service.path) {
-        //     cout << "(" << edge_wl.edge.idx + 1 << ", " << edge_wl.Left + 1 << "-" << edge_wl.Right + 1 << ") ";
-        //     }
-        //     cout << "\n\n";
-        // }
         for (int i = 0; i < T; i++) {
-            // cout << "Replanning scenario " << i << endl;
+            // for (const auto& service : input.services) {
+            //     cout << "Service ID: " << service.id + 1 << "\n";
+            //     cout << "Source: " << service.source + 1 << "\n";
+            //     cout << "Destination: " << service.dest + 1 << "\n";
+            //     cout << "Sequence Length: " << service.Seq_length << "\n";
+            //     cout << "Left: " << service.Left + 1 << "\n";
+            //     cout << "Right: " << service.Right + 1 << "\n";
+            //     cout << "Value: " << service.Value << "\n";
+            //     cout << "Path: ";
+            //     for (const auto& edge_wl : service.path) {
+            //     cout << "(" << edge_wl.edge.idx + 1 << ", " << edge_wl.Left + 1 << "-" << edge_wl.Right + 1 << ") ";
+            //     }
+            //     cout << "\n\n";
+            // }
+            // for (size_t i = 0; i < input.P.size(); i++) {
+            //     cout << "p-" << i << ' ' << input.P[i] << endl;
+                
+            // }
+            // cout << "failed-edges:" << endl;
+            // for (const Edge &edge: failed_edges) {
+            //     cout << edge.idx << endl;
+            // }
+
             replan_scenario();
             reset_scenario(initial_input_state);
         }
@@ -682,7 +717,7 @@ int main()
     ReadInput::read_input();
 
     Bottleneck::bottleneck();
-    // cout << "starting replanning" << endl;;
+
     Replanning::replanning();
 
     return 0;
