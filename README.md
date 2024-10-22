@@ -43,12 +43,7 @@ The replanning process involves:
 - Recalculating the shortest path with available wavelengths for each service.
 - Applying channel conversion where necessary to maintain wavelength continuity.
 
-### 5. **Generating Bottleneck Fiber Failure Sequences**
-To fully test the robustness of our algorithm, we generated **fiber failure test scenarios** that push the baseline solution to its limits. These scenarios are crafted to expose weaknesses in traditional shortest-path algorithms, particularly in cases where wavelength availability is scarce, or where multiple services must traverse the same set of edges.
-
-Our failure scenarios are diverse and adhere to the Jaccard similarity constraints to ensure that the test cases are both varied and challenging. By simulating multiple failure sequences, we ensure that our solution can handle a wide range of real-world disruptions in optical networks.
-
-### 6. **Optimizing the Survival Value of Services**
+### 5. **Optimizing the Survival Value of Services**
 The key metric for scoring our solution is the total value of surviving services after each test scenario. Our algorithm focuses on maximizing this value by:
 - Prioritizing high-value services during the replanning phase.
 - Efficiently using available wavelengths and channel conversion resources.
