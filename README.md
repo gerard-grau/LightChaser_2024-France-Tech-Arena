@@ -1,6 +1,6 @@
 # Optical Network Service Continuity Optimization
 
-This project contains our solution for the **Tech Arena 2024 - Optical Network Service Continuity Optimization Challenge**, developed by the team **Gerard Grau García, Marc, and Pol**.
+This project contains our solution for the **Tech Arena 2024 - Optical Network Service Continuity Optimization Challenge**, developed by the team **Gerard Grau, Marc Herrero, and Pol Resina**.
 
 ## Problem Overview
 
